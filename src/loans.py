@@ -1,12 +1,14 @@
-import copy
+from copy import copy
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+from collections import OrderedDict
+
+amortisation_vectors = pd.read_csv('src/amortisation_profiles.csv', header=0, index_col=0)
 
 
 class Loan:
 
-    def __init__(self, loan_id, orig_balance, coupon, term):
+    def __init__(self, loan_id, orig_balance, coupon, term, amortisation_type, vector):
         """
 
         Args:
@@ -14,105 +16,173 @@ class Loan:
             orig_balance (float):
             coupon (float):
             term (int): number of months
+            amortisation_type (str): 'fix_instalment', 'vector', 'bullet'
+            vector (list):
         """
         self.loan_id = loan_id
         self.orig_balance = orig_balance
         self.coupon = coupon
         self.term = term
+        self.amortisation_type = amortisation_type
+        self.vector = vector
         self.cash_flow_df = pd.DataFrame()
 
-    def generate_cash_flows(self):
+    def generate_scheduled_amortisation_profile(self):
         """ overridden in the sub-classes
 
         Returns:
-            cash_flow_df (pd.DataFrame): cash flow table (no default, no prepayment)
+            scheduled_bal (list): beginning balance for each period (It also contains a zero in the period after
+            maturity. Therefore the length of the vector is self.term + 1).
         """
-        return pd.DataFrame()
+        scheduled_bal = []
+        return scheduled_bal
 
-    def visualize_cash_flows(self):
-        """ stack plot chart for cash flows """
+    def generate_cash_flows(self, cpr, cdr):
+        """
 
-        plt.plot([], [], color='green', label='interest', linewidth=3)
-        plt.plot([], [], color='blue', label='principal', linewidth=3)
+        Constant Default Rate (CDR):
+        It refers to the percentage of mortgages within a pool of loans for which the mortgagors have fallen more than 90
+        days behind. It is a measure used to analyze losses within mortgage-backed securities.
 
-        plt.stackplot(
-            self.cash_flow_df.index, self.cash_flow_df.interest, self.cash_flow_df.principal, colors=['green', 'blue'])
+        Conditional Prepayment Rate (CPR):
+        It is a loan prepayment rate equivalent to the proportion of a loan pool's principal that is assumed to be paid
+        off ahead of time in each period. The calculation of this estimate is based on a number of factors, such as
+        historical prepayment rates for previous loans similar to ones in the pool and future economic outlooks.
 
-        plt.xlabel('months')
-        plt.ylabel('payment')
-        plt.title('Loan Amortisation')
-        plt.legend()
-        plt.show()
+        Single Monthly Mortality (SMM):
+        It is a measure of the prepayment rate of a mortgage-backed security (MBS). As the term suggests, the single
+        monthly mortality measures prepayment in a given month and is expressed as a percentage.
+
+            SMM = 1 – (1 – CPR) ^ (1 / 12)
+
+        Returns:
+            cash_flow_df (pd.DataFrame): cash flow table
+        """
+
+        scheduled_bal = self.generate_scheduled_amortisation_profile()
+        end_bal = copy(self.orig_balance)
+
+        smm_cpr = 1 - (1 - cpr) ** (1 / 12)
+        smm_cdr = 1 - (1 - cdr) ** (1 / 12)
+
+        p = 0
+        while p <= self.term and round(end_bal, 0) > 0:
+            p += 1
+
+            beg_bal = end_bal
+            default = beg_bal * smm_cdr
+            prepayment = (beg_bal - default) * smm_cpr * (scheduled_bal[p] / scheduled_bal[p - 1])
+            principal = (beg_bal - default) * (1 - scheduled_bal[p] / scheduled_bal[p - 1])
+            end_bal = beg_bal - default - principal - prepayment
+
+            yield OrderedDict([
+                ('period', p),
+                ('beg_bal', beg_bal),
+                ('principal', principal),
+                ('default', default),
+                ('prepayment', prepayment),
+                ('end_bal', end_bal)])
+
+    def generate_cash_flow_table(self, cpr, cdr, recovery, recovery_lag):
+        """ create full cash flow table including interest, principal, default, prepayment, recovery, etc.
+
+        Args:
+            cpr (float): conditional prepayment rate -- annual
+            cdr (float): constant default rate -- annual
+            recovery (float): 1 - loss severity
+            recovery_lag (int): no of month between default and liquidation
+
+        Returns:
+            cash_flow_df (pd.DataFrame): cash flow table
+        """
+        cash_flow_df = pd.DataFrame(self.generate_cash_flows(cpr, cdr))
+        cash_flow_df.set_index('period', inplace=True, drop=True)
+
+        # adding new columns
+        cash_flow_df['interest'] = cash_flow_df['beg_bal'] * self.coupon / 12
+        cash_flow_df['liquidation'] = cash_flow_df['default']
+        cash_flow_df['loss'] = cash_flow_df['default'] * (1 - recovery)
+        cash_flow_df['recovery'] = cash_flow_df['default'] * recovery
+
+        # shifting by recovery lag
+        cash_flow_df['liquidation'] = cash_flow_df['liquidation'].shift(recovery_lag).fillna(0)
+        cash_flow_df['loss'] = cash_flow_df['loss'].shift(recovery_lag).fillna(0)
+        cash_flow_df['recovery'] = cash_flow_df['recovery'].shift(recovery_lag).fillna(0)
+
+        cash_flow_df['total_princ'] = cash_flow_df['principal'] + cash_flow_df['recovery'] + cash_flow_df['prepayment']
+        cash_flow_df['payment'] = cash_flow_df['interest'] + cash_flow_df['total_princ']
+
+        self.cash_flow_df = cash_flow_df
+        return self.cash_flow_df
+
+    def calculate_wal(self):
+        """
+        calculate the tranche's waited average life
+
+        multiply the time (in years) since the closing date and the principal payment. Then divide it by the total prin
+        paid.
+
+        Returns:
+            wal (float): weighted average life
+        """
+        wal = np.sum(self.cash_flow_df['total_princ'] * self.cash_flow_df.index / 12) / self.orig_balance
+        return wal
 
 
 class FixInstalmentLoan(Loan):
 
-    def generate_cash_flows(self):
-        """
+    def generate_scheduled_amortisation_profile(self):
+        """ calculate the beginning balance for each periods based on no default, no prepayment (scheduled amortisation)
+
+        The total payment is the same for each periods but the interest vs principal proportion is changing overtime.
+        (The principal portion is increasing.)
+
+        Formula:
+            - numpy.pmt (to calculate the fix instalment)
+            - numpy.ppmt (to calculate the principal portion for a given period or periods)
+            - numpy.ipmt (to calculate the interest portion for a given period or periods)
 
         Returns:
-            cash_flow_df (pd.DataFrame): cash flow table (no default, no prepayment)
+            scheduled_bal (list): beginning balance for each period (It also contains a zero in the period after
+            maturity. Therefore the length of the vector is self.term + 1).
         """
-
-        cash_flows = []
-        curr_bal = copy.deepcopy(self.orig_balance)
-        installment = np.pmt(rate=self.coupon / 12, nper=self.term, pv=-self.orig_balance)
-
-        p = 0
-        while p <= self.term:
-            p += 1
-            interest = curr_bal * self.coupon / 12
-            principal = installment - interest
-            cash_flows.append({
-                'beg_bal': curr_bal,
-                'interest': interest,
-                'principal': principal,
-                'payment': installment,
-                'end_bal': curr_bal - principal,
-            })
-            curr_bal -= principal
-
-        self.cash_flow_df = pd.DataFrame(cash_flows)
-        return self.cash_flow_df
+        periods = range(1, self.term + 1)
+        principal_vector = np.ppmt(rate=self.coupon / 12, per=periods, nper=self.term, pv=-self.orig_balance)
+        scheduled_bal = [self.orig_balance] + list(self.orig_balance - principal_vector.cumsum())
+        return scheduled_bal
 
 
 class VectorAmortisationLoan(Loan):
 
-    def __init__(self, loan_id, orig_balance, coupon, term, vector):
-        super(VectorAmortisationLoan, self).__init__(loan_id, orig_balance, coupon, term)
-        self.vector = vector
+    def generate_scheduled_amortisation_profile(self):
+        """ calculate the beginning balance for each periods based on no default, no prepayment (scheduled amortisation)
 
-    def generate_cash_flows(self):
-        """
+        In this case the amortisation of the loan defined by a vector (input variable) which represents the actual
+        principal payment for each period.
 
         Returns:
-            cash_flow_df (pd.DataFrame): cash flow table (no default, no prepayment)
+            scheduled_bal (list): beginning balance for each period (It also contains a zero in the period after
+            maturity. Therefore the length of the vector is self.term + 1).
         """
 
-        self.cash_flow_df = pd.DataFrame()
-        return self.cash_flow_df
+        vector = amortisation_vectors[self.vector]
+        scheduled_bal = [self.orig_balance] + list(self.orig_balance - vector.cumsum())
+        return scheduled_bal
 
 
 class BulletPayment(Loan):
 
-    def generate_cash_flows(self):
-        """
+    def generate_scheduled_amortisation_profile(self):
+        """ calculate the beginning balance for each periods based on no default, no prepayment (scheduled amortisation)
+
+        Interest Only (IO):
+        There is no principal payment during the life of the loan but there is a big bullet payment at maturity that is
+        the full notional (original balance) of the loan.
 
         Returns:
-            cash_flow_df (pd.DataFrame): cash flow table (no default, no prepayment)
+            scheduled_bal (list): beginning balance for each period (It also contains a zero in the period after
+            maturity. Therefore the length of the vector is self.term + 1).
         """
 
-        interest = self.orig_balance * self.coupon / 12
-        cash_flows = {
-            'beg_bal': [self.orig_balance] * self.term,
-            'interest': [interest] * self.term,
-            'principal': [0] * self.term,
-            'payment': [interest] * self.term,
-            'end_bal': [self.orig_balance] * self.term}
-
-        cash_flows['end_bal'][-1] = 0
-        cash_flows['principal'][-1] = self.orig_balance
-        cash_flows['payment'][-1] += self.orig_balance
-
-        self.cash_flow_df = pd.DataFrame(cash_flows)
-        return self.cash_flow_df
+        scheduled_bal = [self.orig_balance] * self.term + [0]
+        return scheduled_bal
