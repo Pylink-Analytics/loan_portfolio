@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import plotly.express as px
 
 
 def visualize_cash_flows(cash_flow_df):
@@ -37,3 +38,12 @@ def visualize_cash_flows_2(cash_flow_df):
     plt.title('Loan Amortisation')
     plt.legend()
     plt.show()
+
+
+def visualize_cash_flows_3(cash_flow_df):
+    """ stack bar chart for cash flows """
+
+    cash_flow_df['period'] = cash_flow_df.index
+    fig = px.bar(cash_flow_df, x="period", y=['prepayment', 'principal', 'default', 'interest', 'recovery', ])
+
+    fig.show()

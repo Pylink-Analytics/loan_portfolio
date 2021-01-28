@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from src import loans
-from src.charts import visualize_cash_flows
+from src.charts import visualize_cash_flows_3
 
 
 loan_classes = {
@@ -35,8 +35,8 @@ import matplotlib.pyplot as plt
 plt.plot(wals)
 plt.show()
 
-# loan_1 = portfolio[11]
-# print(loan_1.calculate_wal())
+loan_1 = portfolio[11]
+print(loan_1.calculate_wal())
 
-# visualize_cash_flows(total_cf)
+visualize_cash_flows_3(total_cf)
 
