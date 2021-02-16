@@ -1,10 +1,10 @@
+import datetime
 from copy import copy
 import numpy as np
 import pandas as pd
 from collections import OrderedDict
 
 amortisation_vectors = pd.read_csv('src/amortisation_profiles.csv', header=0, index_col=0)
-
 
 class Loan:
 
@@ -83,7 +83,42 @@ class Loan:
                 ('prepayment', prepayment),
                 ('end_bal', end_bal)])
 
-    def generate_cash_flow_table(self, cpr, cdr, recovery, recovery_lag):
+    def create_cf_dict(self, cpr, cdr):
+
+        end_bal = []
+        scheduled_bal = self.generate_scheduled_amortisation_profile()
+        orig_bal = copy(self.orig_balance)
+        end_bal.append(orig_bal)
+
+        smm_cpr = 1 - (1 - cpr) ** (1 / 12)
+        smm_cdr = 1 - (1 - cdr) ** (1 / 12)
+
+        p = 0
+        period = []
+        beg_bal = []
+        default = []
+        prepayment = []
+        principal = []
+
+        while p <= self.term and round(end_bal[-1], 0) > 0:
+            p += 1
+            period.append(p)
+            beg_bal.append(end_bal[-1])
+            default.append(beg_bal[-1] * smm_cdr)
+            prepayment.append((beg_bal[-1] - default[-1]) * smm_cpr * (scheduled_bal[p] / scheduled_bal[p - 1]))
+            principal.append((beg_bal[-1] - default[-1]) * (1 - scheduled_bal[p] / scheduled_bal[p - 1]))
+            end_bal.append(beg_bal[-1] - default[-1] - principal[-1] - prepayment[-1])
+
+        end_bal.pop(0)
+        return OrderedDict([
+                ('period', period),
+                ('beg_bal', beg_bal),
+                ('principal', principal),
+                ('default', default),
+                ('prepayment', prepayment),
+                ('end_bal', end_bal)])
+
+    def generate_cash_flow_table(self, cpr, cdr, recovery, recovery_lag, type):
         """ create full cash flow table including interest, principal, default, prepayment, recovery, etc.
 
         Args:
@@ -95,7 +130,12 @@ class Loan:
         Returns:
             cash_flow_df (pd.DataFrame): cash flow table
         """
-        cash_flow_df = pd.DataFrame(self.generate_cash_flows(cpr, cdr))
+        if type == "Generator":
+            cash_flow_df = pd.DataFrame(self.generate_cash_flows(cpr, cdr))
+        elif type == "Dictionary":
+            cash_flow_df = pd.DataFrame(self.create_cf_dict(cpr, cdr))
+        else:
+            cash_flow_df = pd.DataFrame(self.generate_cash_flows(cpr, cdr))
         cash_flow_df.set_index('period', inplace=True, drop=True)
 
         # adding new columns
@@ -127,6 +167,22 @@ class Loan:
         """
         wal = np.sum(self.cash_flow_df['total_princ'] * self.cash_flow_df.index / 12) / self.orig_balance
         return wal
+
+    def check_pandas_speeds(self, cpr, cdr):
+        """ perform three methods of filling a pandas DF to show speed differences"""
+
+        beg_time = datetime.datetime.now()
+        df_1 = pd.DataFrame(self.generate_cash_flows(cpr, cdr))
+        runtime = ((datetime.datetime.now() - beg_time).total_seconds()) * 1e09
+        print("Generator: " + str(runtime) + "ns")
+
+        beg_time = datetime.datetime.now()
+        # dict_2 = self.create_cf_dict(cpr, cdr)
+        df_2 = pd.DataFrame(self.create_cf_dict(cpr, cdr))
+        runtime = ((datetime.datetime.now() - beg_time).total_seconds()) * 1E09
+        print("Generator: " + str(runtime) + "ns")
+
+
 
 
 class FixInstalmentLoan(Loan):
