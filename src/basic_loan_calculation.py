@@ -7,10 +7,9 @@ import matplotlib.pyplot as plt
 loan_tape = pd.read_csv('src/loan_tape.csv', header=0)
 
 # setting up the assumptions from the dataframe
-orig_bal = loan_tape['orig_balance'][0]
-start_bal = orig_bal
-coupon = loan_tape['coupon'][0]/12
-term = loan_tape['term'][0]
+orig_bal = 5e05
+coupon = 0.08 / 12
+term = 120
 
 # intialising lists
 amortisation_profile = []
