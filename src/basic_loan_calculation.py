@@ -12,7 +12,6 @@ coupon = 0.08 / 12
 term = 120
 
 # intialising lists
-amortisation_profile = []
 periods = range(1, term + 1)
 payment_periods = [0] + list(periods)
 
