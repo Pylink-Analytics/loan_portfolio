@@ -20,6 +20,7 @@ interest_payment = list(npf.ipmt(rate=coupon, per=periods, nper=term, pv=-orig_b
 principle_payment = list(npf.ppmt(rate=coupon, per=periods, nper=term, pv=-orig_bal))
 scheduled_principle = [orig_bal] * (term + 1)
 
+# storing vectors in a dictionary, which is then converted into a pandas dataframe
 results = {
             'Period': payment_periods,
             'Interest': [0] + interest_payment,
