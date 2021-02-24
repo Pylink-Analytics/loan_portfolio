@@ -1,5 +1,6 @@
 import numpy_financial as npf
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 
 # reading loan_tape.csv into a pandas dataframe
@@ -12,32 +13,27 @@ coupon = loan_tape['coupon'][0]/12
 term = loan_tape['term'][0]
 
 # intialising lists
-interest_payment = []
-principle_payment = []
 amortisation_profile = []
 periods = range(1, term + 1)
+payment_periods = [0] + list(periods)
 
 # creating payment vectors
-interest_payment = -npf.ipmt(rate=coupon, per=periods, nper=term, pv=orig_bal)
-principle_payment = -npf.ppmt(rate=coupon, per=periods, nper=term, pv=orig_bal)
+interest_payment = list(npf.ipmt(rate=coupon, per=periods, nper=term, pv=-orig_bal))
+principle_payment = list(npf.ppmt(rate=coupon, per=periods, nper=term, pv=-orig_bal))
+scheduled_principle = [orig_bal] * (term + 1)
 
-# loop to create scheduled principle
-for period in periods:
-    prin_paid = principle_payment[period - 1]
-    end_bal = start_bal - prin_paid
-    amortisation_profile.append(round(end_bal, 4) + 0)
-    start_bal = end_bal
+results = {
+            'Period': payment_periods,
+            'Interest': [0] + interest_payment,
+            'Principle': [0] + principle_payment,
+            'Scheduled Principle': scheduled_principle,
+           }
 
-# appending period 0 to the periods and the scheduled principle lists
-payment_periods = [0] + list(periods)
-amortisation_profile = [orig_bal] + amortisation_profile
-
-# storing results in a dictionary and then converting to pandas dataframe
-results = {'Period': payment_periods, 'Scheduled Principle': amortisation_profile}
-results_df = pd.DataFrame(results)
+result_df = pd.DataFrame(results)
+result_df['Scheduled Principle'] = np.maximum((result_df['Scheduled Principle'] - result_df['Principle'].cumsum()), 0)
 
 # stacked area plot with relationship between interest and principle over loan life
-plt.stackplot(periods, interest_payment, principle_payment, labels=['Interest', 'Principle'])
+plt.stackplot(list(periods), interest_payment, principle_payment, labels=['Interest', 'Principle'])
 plt.legend(loc='upper left')
 plt.xlabel("Period")
 plt.ylabel("Payment")
@@ -45,9 +41,8 @@ plt.margins(0, 0)
 plt.show()
 
 # barchart showing scheduled principle
-plt.bar(results_df['Period'], results_df['Scheduled Principle'], 0.5)
+plt.bar(result_df['Period'], result_df['Scheduled Principle'], 0.5)
 plt.xlabel("Period")
 plt.ylabel("Remaining Principle")
 plt.margins(0, 0)
 plt.show()
-
