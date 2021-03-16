@@ -97,7 +97,12 @@ def calculate_amortisation(interest_rate_curve, cpr, default_rate, default_curve
 
 def calculate_wal(principal, beg_bal):
     """
+        Args:
+            principal(pd.df): data-frame with principal payment data
+            beg_bal(int): Initial principal balance
 
+        Returns:
+            wal(float): weighted average life in years of cash-flow
     """
     wal = np.sum(principal * principal.index / 12) / beg_bal
     return wal
