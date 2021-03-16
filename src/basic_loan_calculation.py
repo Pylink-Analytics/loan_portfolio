@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import numpy_financial as npf
 import matplotlib.pyplot as plt
 from collections import namedtuple
@@ -94,13 +95,29 @@ def calculate_amortisation(interest_rate_curve, cpr, default_rate, default_curve
     return cf_df
 
 
+def calculate_wal(principal, beg_bal):
+    """
+        Args:
+            principal(pd.df): data-frame with principal payment data
+            beg_bal(int): Initial principal balance
+
+        Returns:
+            wal(float): weighted average life in years of cash-flow
+    """
+    wal = np.sum(principal * principal.index / 12) / beg_bal
+    return wal
+
 plt.figure()
 cf_table = calculate_amortisation(
     interest_rate_curve='down_stress', cpr=0.0, default_rate=0.2, default_curve='Back_10yr', lgd=0.5, recovery_lag=3)
+cf_wal = calculate_wal(cf_table['scheduled_prin'], cf_table['beg_bal'][0])
+print(cf_wal)
 cf_table[['interest', 'scheduled_prin', 'prepay', 'recovery']].plot.area()
 plt.show()
 
 cf_table = calculate_amortisation(
     interest_rate_curve='down_stress', cpr=0.00, default_rate=0.2, default_curve='Front_10yr', lgd=0.5, recovery_lag=3)
+cf_wal = calculate_wal(cf_table['scheduled_prin'], cf_table['beg_bal'][0])
+print(cf_wal)
 cf_table[['interest', 'scheduled_prin', 'prepay', 'recovery']].plot.area()
 plt.show()
