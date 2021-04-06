@@ -15,8 +15,8 @@ periods = range(1, term+1)
 int_payment = npf.ipmt(rate=coupon / 12, per=periods, nper=term, pv=-orig_bal)
 prin_payment = npf.ppmt(rate=coupon / 12, per=periods, nper=term, pv=-orig_bal)
 
-# stacked area plot with relationship between interest and principle over loan life
-# plt.stackplot(periods, int_payment, prin_payment, labels=['Interest', 'Principle'])
+# stacked area plot with relationship between interest and principal over loan life
+# plt.stackplot(periods, int_payment, prin_payment, labels=['Interest', 'Principal'])
 # plt.legend(loc='upper left')
 # plt.xlabel("Period")
 # plt.ylabel("Payment")
@@ -24,16 +24,16 @@ prin_payment = npf.ppmt(rate=coupon / 12, per=periods, nper=term, pv=-orig_bal)
 # plt.show()
 
 # cash flow table
-cf_table = pd.DataFrame({'Interest': int_payment, 'Principle': prin_payment}, index=periods)
-cf_table['Payment'] = cf_table['Interest'] + cf_table['Principle']
-cf_table['End Bal'] = orig_bal - cf_table['Principle'].cumsum()
+cf_table = pd.DataFrame({'Interest': int_payment, 'Principal': prin_payment}, index=periods)
+cf_table['Payment'] = cf_table['Interest'] + cf_table['Principal']
+cf_table['End Bal'] = orig_bal - cf_table['Principal'].cumsum()
 cf_table['Beg Bal'] = [orig_bal] + list(cf_table['End Bal'])[:-1]
-cf_table = cf_table[['Beg Bal', 'Payment', 'Interest', 'Principle', 'End Bal']]
+cf_table = cf_table[['Beg Bal', 'Payment', 'Interest', 'Principal', 'End Bal']]
 
-# barchart showing scheduled principle
+# barchart showing scheduled principal
 # plt.bar(cf_table.index, cf_table['Beg Bal'], 0.5)
 # plt.xlabel("Period")
-# plt.ylabel("Remaining Principle")
+# plt.ylabel("Remaining Principal")
 # plt.margins(0, 0)
 # plt.show()
 
@@ -52,7 +52,10 @@ sonia = pd.read_csv('./sonia.csv', header=0, index_col=0)
 
 
 def calculate_amortisation(interest_rate_curve, cpr, default_rate, default_curve, lgd, recovery_lag):
-    """
+    """ generate cash flow table for loan
+
+    The interest, principal, default and prepayments are (re)calculated in each period. Therefore we have a while loop
+    to iterate until the loan balance is zero.
 
     Args:
         interest_rate_curve (str): name of the interest rate curve assumption (e.g., 3m_forward, up_stress)
@@ -71,7 +74,7 @@ def calculate_amortisation(interest_rate_curve, cpr, default_rate, default_curve
     result = []
     end_bal = orig_bal
     smm = 1 - (1 - cpr) ** (1 / 12)
-    while round(end_bal, 0) > 0 and period <= term:
+    while round(end_bal, 0) > 0:
 
         beg_bal = end_bal
         flt_coupon = (spread + sonia.loc[period, interest_rate_curve]) / 12
@@ -96,11 +99,18 @@ def calculate_amortisation(interest_rate_curve, cpr, default_rate, default_curve
 
 plt.figure()
 cf_table = calculate_amortisation(
-    interest_rate_curve='down_stress', cpr=0.0, default_rate=0.2, default_curve='Back_10yr', lgd=0.5, recovery_lag=3)
+    interest_rate_curve='3m_forward', cpr=0.0, default_rate=0.30, default_curve='Front_10yr', lgd=0.5, recovery_lag=3)
 cf_table[['interest', 'scheduled_prin', 'prepay', 'recovery']].plot.area()
+
+print('int:', round(cf_table.interest.sum(), 0))
+print('prin:', round(cf_table.scheduled_prin.sum() + cf_table.prepay.sum() + cf_table.recovery.sum(), 0))
 plt.show()
 
 cf_table = calculate_amortisation(
-    interest_rate_curve='down_stress', cpr=0.00, default_rate=0.2, default_curve='Front_10yr', lgd=0.5, recovery_lag=3)
+    interest_rate_curve='3m_forward', cpr=0.0, default_rate=0.30, default_curve='Back_10yr', lgd=0.5, recovery_lag=3)
 cf_table[['interest', 'scheduled_prin', 'prepay', 'recovery']].plot.area()
 plt.show()
+
+print('int:', round(cf_table.interest.sum(), 0))
+print('prin:', round(cf_table.scheduled_prin.sum() + cf_table.prepay.sum() + cf_table.recovery.sum(), 0))
+
