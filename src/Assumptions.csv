@@ -1,6 +1,6 @@
 ﻿assumption,interest,cpr,default_rate,default_curve,lgd,recovery_lag
+Base Scenario,3m_forward,0,0,Front_10yr,0.5,3
 Rising Interest,up_stress,0,0,Front_10yr,0.5,3
-Falling Interest,down_stress,0,0,Front_10yr,0.5,3
 10% CPR,3m_forward,0.1,0,Front_10yr,0.5,3
 5% Default Front,3m_forward,0,0.05,Front_10yr,0.5,3
 30% Default Front,3m_forward,0,0.3,Front_10yr,0.5,3
